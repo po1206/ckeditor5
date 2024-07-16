@@ -398,6 +398,28 @@ describe( 'EditorUI', () => {
 		} );
 	} );
 
+	describe( 'extendMenuBar()', () => {
+		it( 'should add element to array', () => {
+			const ui = new EditorUI( editor );
+
+			expect( ui._extraMenuBarElements ).to.have.lengthOf( 0 );
+
+			ui.extendMenuBar( {
+				item: 'foo',
+				position: 'after:bar'
+			} );
+
+			expect( ui._extraMenuBarElements ).to.have.lengthOf( 1 );
+
+			ui.extendMenuBar( {
+				item: 'foo2',
+				position: 'after:bar'
+			} );
+
+			expect( ui._extraMenuBarElements ).to.have.lengthOf( 2 );
+		} );
+	} );
+
 	describe( 'View#scrollToTheSelection integration', () => {
 		it( 'should listen to View#scrollToTheSelection and inject the offset values into the event', async () => {
 			const editorElement = document.createElement( 'div' );
@@ -783,7 +805,7 @@ describe( 'EditorUI', () => {
 
 			describe( 'Restoring focus on Esc key press', () => {
 				let locale, visibleToolbarA, visibleToolbarB, editingAreaA, editingAreaB, nonEngineEditingArea, invisibleEditingArea;
-				let editingFocusSpy, editingAreaASpy, editingAreaBSpy, nonEngineEditingAreaSpy, invisibleEditingAreaSpy;
+				let visibleMenuBar, editingFocusSpy, editingAreaASpy, editingAreaBSpy, nonEngineEditingAreaSpy, invisibleEditingAreaSpy;
 
 				beforeEach( () => {
 					locale = { t: val => val };
@@ -798,8 +820,14 @@ describe( 'EditorUI', () => {
 					visibleToolbarB.render();
 					document.body.appendChild( visibleToolbarB.element );
 
+					visibleMenuBar = new MenuBarView( locale );
+					visibleMenuBar.ariaLabel = 'menu bar';
+					visibleMenuBar.render();
+					document.body.appendChild( visibleMenuBar.element );
+
 					ui.addToolbar( visibleToolbarA );
 					ui.addToolbar( visibleToolbarB );
+					ui._initMenuBar( visibleMenuBar );
 
 					editingAreaA = document.createElement( 'div' );
 					editingAreaB = document.createElement( 'div' );
@@ -846,6 +874,7 @@ describe( 'EditorUI', () => {
 				afterEach( () => {
 					visibleToolbarA.element.remove();
 					visibleToolbarB.element.remove();
+					visibleMenuBar.element.remove();
 
 					editingAreaA.remove();
 					editingAreaB.remove();
@@ -854,6 +883,7 @@ describe( 'EditorUI', () => {
 
 					visibleToolbarA.destroy();
 					visibleToolbarB.destroy();
+					visibleMenuBar.destroy();
 				} );
 
 				it( 'should do nothing if no toolbar is focused', () => {
@@ -880,11 +910,44 @@ describe( 'EditorUI', () => {
 					sinon.assert.notCalled( invisibleEditingAreaSpy );
 				} );
 
+				it( 'should return focus back from menu bar to the editing view if it came from there', () => {
+					// Catches the `There is no selection in any editable to focus.` warning.
+					sinon.stub( console, 'warn' );
+
+					ui.focusTracker.focusedElement = editor.editing.view.getDomRoot();
+
+					pressAltF9();
+					ui.focusTracker.focusedElement = visibleMenuBar.element;
+
+					pressEsc();
+
+					sinon.assert.calledOnce( editingFocusSpy );
+					sinon.assert.notCalled( editingAreaASpy );
+					sinon.assert.notCalled( editingAreaBSpy );
+					sinon.assert.notCalled( nonEngineEditingAreaSpy );
+					sinon.assert.notCalled( invisibleEditingAreaSpy );
+				} );
+
 				it( 'should return focus back to the last focused editing area that does not belong to the editing view', () => {
 					ui.focusTracker.focusedElement = nonEngineEditingArea;
 
 					pressAltF10();
 					ui.focusTracker.focusedElement = visibleToolbarA.element;
+
+					pressEsc();
+
+					sinon.assert.calledOnce( nonEngineEditingAreaSpy );
+					sinon.assert.notCalled( editingAreaASpy );
+					sinon.assert.notCalled( editingAreaBSpy );
+					sinon.assert.notCalled( invisibleEditingAreaSpy );
+				} );
+
+				it( 'should return focus back from menu bar to the last focused editing area' +
+					'that does not belong to the editing view', () => {
+					ui.focusTracker.focusedElement = nonEngineEditingArea;
+
+					pressAltF9();
+					ui.focusTracker.focusedElement = visibleMenuBar.element;
 
 					pressEsc();
 
@@ -915,12 +978,70 @@ describe( 'EditorUI', () => {
 					sinon.assert.notCalled( invisibleEditingAreaSpy );
 				} );
 
+				it( 'should return focus back to the last focused editing area after navigating across toolbar and menu bar', () => {
+					// Catches the `There is no selection in any editable to focus.` warning.
+					sinon.stub( console, 'warn' );
+
+					ui.focusTracker.focusedElement = editingAreaB;
+
+					pressAltF10();
+					ui.focusTracker.focusedElement = visibleToolbarA.element;
+
+					pressAltF9();
+					ui.focusTracker.focusedElement = visibleMenuBar.element;
+
+					pressEsc();
+
+					sinon.assert.calledOnce( editingFocusSpy );
+					sinon.assert.notCalled( editingAreaBSpy );
+					sinon.assert.notCalled( editingAreaASpy );
+					sinon.assert.notCalled( nonEngineEditingAreaSpy );
+					sinon.assert.notCalled( invisibleEditingAreaSpy );
+				} );
+
+				it( 'should return focus back to the last focused editing area after navigating across menu bar and toolbar', () => {
+					// Catches the `There is no selection in any editable to focus.` warning.
+					sinon.stub( console, 'warn' );
+
+					ui.focusTracker.focusedElement = editingAreaB;
+
+					pressAltF9();
+					ui.focusTracker.focusedElement = visibleMenuBar.element;
+
+					pressAltF10();
+					ui.focusTracker.focusedElement = visibleToolbarA.element;
+
+					pressEsc();
+
+					sinon.assert.calledOnce( editingFocusSpy );
+					sinon.assert.notCalled( editingAreaBSpy );
+					sinon.assert.notCalled( editingAreaASpy );
+					sinon.assert.notCalled( nonEngineEditingAreaSpy );
+					sinon.assert.notCalled( invisibleEditingAreaSpy );
+				} );
+
 				it( 'should focus the first editing area if the focus went straight to the toolbar' +
 					'without focusing any editing areas', () => {
 					// Catches the `There is no selection in any editable to focus.` warning.
 					sinon.stub( console, 'warn' );
 
 					ui.focusTracker.focusedElement = visibleToolbarA.element;
+
+					pressEsc();
+
+					sinon.assert.calledOnce( editingFocusSpy );
+					sinon.assert.notCalled( editingAreaASpy );
+					sinon.assert.notCalled( editingAreaBSpy );
+					sinon.assert.notCalled( nonEngineEditingAreaSpy );
+					sinon.assert.notCalled( invisibleEditingAreaSpy );
+				} );
+
+				it( 'should focus the first editing area if the focus went straight to the menu bar' +
+					'without focusing any editing areas', () => {
+					// Catches the `There is no selection in any editable to focus.` warning.
+					sinon.stub( console, 'warn' );
+
+					ui.focusTracker.focusedElement = visibleMenuBar.element;
 
 					pressEsc();
 
@@ -1108,7 +1229,7 @@ describe( 'EditorUI', () => {
 		} );
 
 		function pressAltF9( specificEditor ) {
-			specificEditor.keystrokes.press( {
+			( specificEditor || editor ).keystrokes.press( {
 				keyCode: keyCodes.f9,
 				altKey: true,
 				preventDefault: sinon.spy(),
